@@ -101,7 +101,7 @@ func (m *Module) Stream(s bar.Sink) {
 }
 
 // Output sets the format function to enable custom output formats
-func (m *Module) Output(format func(string) bar.Output) *Module {
+func (m *Module) Output(format func(b *BacklightInfo) bar.Output) *Module {
 	m.formatFunction.Set(format)
 	return m
 }
