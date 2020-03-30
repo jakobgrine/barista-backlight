@@ -20,7 +20,7 @@ type Module struct {
 func New(kernel string) *Module {
 	m := new(Module)
 	m.formatFunc.Set(func(b *Backlight) bar.Output {
-		return outputs.Text(fmt.Sprintf("%d%%", b.Percent()))
+		return outputs.Textf("%d%%", b.Percent())
 	})
 	m.kernel = kernel
 
