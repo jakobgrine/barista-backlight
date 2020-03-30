@@ -1,136 +1,73 @@
 package backlight
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"strconv"
 	"strings"
-
-	"barista.run/bar"
-	"barista.run/base/value"
-	"barista.run/outputs"
-
-	"github.com/fsnotify/fsnotify"
 )
 
-// BacklightInfo holds information about the current state of the screen backlight
-type BacklightInfo struct {
-	bri int
-	max int
+// Backlight holds information about the current state of the screen backlight.
+type Backlight struct {
+	Bri    int
+	Max    int
+	Kernel string
 }
 
-// Percent returns the brightness in percent of the maximum value
-func (b *BacklightInfo) Percent() int {
-	if b.max == 0 {
-		return 0
-	}
-	return int(float64(b.bri) / float64(b.max) * 100.0)
+// NewBacklight creates a new instance of Backlight.
+func NewBacklight(kernel string) *Backlight {
+	return &Backlight{0, 0, kernel}
 }
 
-// Module is the brightness module for the barista status bar
-type Module struct {
-	formatFunction value.Value
-	kernel         string
+// SetBrightness sets the screen brightness.
+func (b *Backlight) SetBrightness(value int) error {
+	file := fmt.Sprintf("/sys/class/backlight/%s/brightness", b.Kernel)
+	bytes := []byte(strconv.Itoa(value))
+	return ioutil.WriteFile(file, bytes, 0644)
 }
 
-// New creates a new instance of Module
-func New(kernel string) *Module {
-	m := new(Module)
-	m.formatFunction.Set(func(b *BacklightInfo) bar.Output {
-		return outputs.Text(fmt.Sprintf("%d%%", b.Percent()))
-	})
-	m.kernel = kernel
-
-	return m
-}
-
-// Stream is the barista stream function to update the status bar state
-func (m *Module) Stream(s bar.Sink) {
-	// Get the screen brightness at the beginning to set the initial state
-	info, err := m.getBacklightInfo()
+// Get updates the Bri and Max values after reading the respective files.
+func (b *Backlight) Get() error {
+	max, err := b.readValue("max_brightness")
 	if err != nil {
-		s.Error(err)
-		return
+		return err
 	}
-	format := m.formatFunction.Get().(func(b *BacklightInfo) bar.Output)
-	s.Output(format(info))
+	b.Max = max
 
-	watcher, err := fsnotify.NewWatcher()
+	bri, err := b.readValue("actual_brightness")
 	if err != nil {
-		s.Error(err)
-		return
+		return err
 	}
-	defer watcher.Close()
+	b.Bri = bri
 
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					s.Error(errors.New("fsnotify.Watcher not ok"))
-					done <- true
-				}
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					// Update the backlight info if the brightness changed
-					info, err := m.getBacklightInfo()
-					if err != nil {
-						s.Error(err)
-						done <- true
-					}
-
-					format := m.formatFunction.Get().(func(b *BacklightInfo) bar.Output)
-					s.Output(format(info))
-				}
-			case err := <-watcher.Errors:
-				s.Error(err)
-				done <- true
-			}
-		}
-	}()
-
-	// Add the actual_brightness file to the filesystem watcher to monitor the current brightness
-	err = watcher.Add("/sys/class/backlight/intel_backlight/actual_brightness")
-	if err != nil {
-		s.Error(err)
-		return
-	}
-
-	<-done
+	return nil
 }
 
-// Output sets the format function to enable custom output formats
-func (m *Module) Output(format func(b *BacklightInfo) bar.Output) *Module {
-	m.formatFunction.Set(format)
-	return m
-}
-
-func readIntFromFile(file string) (int, error) {
+func (b *Backlight) readValue(name string) (int, error) {
+	file := fmt.Sprintf("/sys/class/backlight/%s/%s", b.Kernel, name)
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		return 0, err
 	}
 
-	data := strings.Replace(string(bytes), "\n", "", 1)
+	dat := strings.Replace(string(bytes), "\n", "", 1)
 
-	n, err := strconv.Atoi(data)
+	n, err := strconv.Atoi(dat)
 	if err != nil {
 		return 0, err
 	}
 	return n, nil
 }
 
-func (m *Module) getBacklightInfo() (*BacklightInfo, error) {
-	max, err := readIntFromFile("/sys/class/backlight/intel_backlight/max_brightness")
-	if err != nil {
-		return nil, err
+// Fraction returns the brightness as a fraction of the maximum value.
+func (b *Backlight) Fraction() float64 {
+	if b.Max == 0 {
+		return 0
 	}
+	return float64(b.Bri) / float64(b.Max)
+}
 
-	bri, err := readIntFromFile("/sys/class/backlight/intel_backlight/actual_brightness")
-	if err != nil {
-		return nil, err
-	}
-
-	return &BacklightInfo{bri, max}, nil
+// Percent returns the brightness in percent of the maximum value.
+func (b *Backlight) Percent() int {
+	return int(b.Fraction() * 100.0)
 }
