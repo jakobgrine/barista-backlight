@@ -3,6 +3,7 @@ package backlight
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -69,5 +70,5 @@ func (b *Backlight) Fraction() float64 {
 
 // Percent returns the brightness in percent of the maximum value.
 func (b *Backlight) Percent() int {
-	return int(b.Fraction() * 100.0)
+	return int(math.Round(b.Fraction() * 100.0))
 }
